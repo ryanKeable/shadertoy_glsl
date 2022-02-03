@@ -70,44 +70,47 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord)
             // we have hit a sphere
             sphere[i].hit = true;
             float dist = distance(pRay.o, pHit);
+
+            // not very optimizesd!
             if (dist < minDist)
             {
                 hitSphere = sphere[i];
                 minDist = dist;
+
+                Ray rToL;
+                rToL.o = pHit + nHit * bias;
+                rToL.d = normalize(light.pos - rToL.o);
+
+                vec3 sHit; // primary hit
+                vec3 nSHit; // normal at primary hit
+
+                for (int j; j < sphereCount; j++)
+                {
+                    if (SphereInterection(rToL, sphere[j], sHit, nSHit))
+                    {
+                        if (hitSphere.pos == sphere[j].pos) break;
+                        shadow = true;
+
+                        col = hitSphere.albedo;
+                        break;
+                    }
+                }
+
+                if (!shadow)
+                {
+                    col = hitSphere.albedo * LightTrace(nHit, pHit, light);
+                }
+                else
+                {
+                    col = vec3(0);
+                }
             }
-            col = hitSphere.albedo;
         }
     }
 
     if (hitSphere.hit == true)
     {
-        Ray rToL;
-        rToL.o = pHit + nHit * bias;
-        rToL.d = normalize(light.pos - rToL.o);
 
-        vec3 sHit; // primary hit
-        vec3 nSHit; // normal at primary hit
-
-        for (int j; j < sphereCount; j++)
-        {
-            if (SphereInterection(rToL, sphere[j], sHit, nSHit))
-            {
-                if (hitSphere.pos == sphere[j].pos) break;
-                shadow = true;
-
-                col = hitSphere.albedo;
-                break;
-            }
-        }
-
-        if (!shadow)
-        {
-            col = hitSphere.albedo * LightTrace(nHit, pHit, light);
-        }
-        else
-        {
-            col = vec3(0);
-        }
     }
 
     // Output to screen

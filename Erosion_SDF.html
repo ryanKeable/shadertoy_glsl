@@ -1,0 +1,1362 @@
+<head>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        #canvas {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            position: fixed;
+            position: relative;
+        }
+        
+        .error {
+            font-family: Consolas;
+            font-size: 1.2em;
+            color: black;
+            box-sizing: border-box;
+            background-color: lightcoral;
+            border-radius: 2px;
+            border-color: lightblue;
+            border-width: thin;
+            border-style: solid;
+            line-height: 1.4em;
+            cursor:pointer;
+        }
+        .error:hover {
+            color: black;
+            background-color: brown;
+            border-color: blue;
+        }
+        #message {
+            font-family: Consolas;
+            font-size: 1.2em;
+            color: #ccc;
+            background-color: black;
+            font-weight: bold;
+            z-index: 2;
+            position: absolute;
+        }
+
+        #dat_gui_container {
+            position: absolute;
+            left: 0px;   /* position inside relatively positioned parent */
+            top: 0px;
+            z-index: 3;   /* adjust as needed */
+        }
+
+        /* Pause Button Style */
+        
+        /* Screenshot Button Style */
+
+        /* Reload Button Style */
+    </style>
+</head>
+<body>
+    <div id="message"></div>
+    <div id="dat_gui_container"></div>
+    <div id="container">
+        <!-- Pause Element -->
+    </div>
+    <!-- Screenshot Element -->
+    <!-- Reload Element -->
+</body>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/110/three.min.js"></script>
+<!-- Stats.js -->
+<script src='https://cdnjs.cloudflare.com/ajax/libs/stats.js/r16/Stats.min.js' onload="
+let stats = new Stats();
+compileTimePanel = stats.addPanel(new Stats.Panel('CT MS', '#ff8', '#221'));
+stats.showPanel(1);
+document.body.appendChild(stats.domElement);
+requestAnimationFrame(function loop() {
+    stats.update();
+    requestAnimationFrame(loop);
+});
+"></script>
+<!-- dat.gui -->
+
+<canvas id="canvas"></canvas>
+
+<!-- Shaders -->
+<script id='d:/Prototyping/shadertoy_glsl/lib/simplexNoise3D.glsl' type='x-shader/x-fragment'>#version 300 es
+    precision highp float;
+    uniform vec3        iResolution;
+uniform float       iTime;
+uniform float       iTimeDelta;
+uniform int         iFrame;
+uniform vec4        iDate;
+uniform vec3        iChannelResolution[10];
+uniform vec4        iMouse;
+uniform vec4        iMouseButton;
+uniform sampler2D   iChannel0;
+uniform sampler2D   iChannel1;
+uniform sampler2D   iChannel2;
+uniform sampler2D   iChannel3;
+uniform sampler2D   iChannel4;
+uniform sampler2D   iChannel5;
+uniform sampler2D   iChannel6;
+uniform sampler2D   iChannel7;
+uniform sampler2D   iChannel8;
+uniform sampler2D   iChannel9;
+uniform sampler2D   iKeyboard;
+uniform float       iSampleRate;
+
+#define iGlobalTime iTime
+#define iGlobalFrame iFrame
+
+#define SHADER_TOY
+
+    
+vec2 hash(vec2 p) // replace this by something better
+
+{
+    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+    return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+}
+
+float noise(in vec2 p)
+{
+    const float K1 = 0.366025404; // (sqrt(3)-1)/2;
+    const float K2 = 0.211324865; // (3-sqrt(3))/6;
+
+    vec2  i = floor(p + (p.x + p.y) * K1);
+    vec2  a = p - i + (i.x + i.y) * K2;
+    float m = step(a.y, a.x);
+    vec2  o = vec2(m, 1.0 - m);
+    vec2  b = a - o + K2;
+    vec2  c = a - 1.0 + 2.0 * K2;
+    vec3  h = max(0.5 - vec3(dot(a, a), dot(b, b), dot(c, c)), 0.0);
+    vec3  n = h * h * h * h * vec3(dot(a, hash(i + 0.0)), dot(b, hash(i + o)), dot(c, hash(i + 1.0)));
+    return dot(n, vec3(70.0));
+}
+
+/* discontinuous pseudorandom uniformly distributed in [-0.5, +0.5]^3 */
+vec3 random3(vec3 c)
+{
+    float j = 4096.0 * sin(dot(c, vec3(17.0, 59.4, 15.0)));
+    vec3 r;
+    r.z = fract(512.0 * j);
+    j *= .125;
+    r.x = fract(512.0 * j);
+    j *= .125;
+    r.y = fract(512.0 * j);
+    return r - 0.5;
+}
+
+/* skew constants for 3d simplex functions */
+const float F3 = 0.3333333;
+const float G3 = 0.1666667;
+
+/* 3d simplex noise */
+float simplex3d(vec3 p)
+{
+    /* 1. find current tetrahedron T and it's four vertices */
+    /* s, s+i1, s+i2, s+1.0 - absolute skewed (integer) coordinates of T vertices */
+    /* x, x1, x2, x3 - unskewed coordinates of p relative to each of T vertices*/
+    
+    /* calculate s and x */
+    vec3 s = floor(p + dot(p, vec3(F3)));
+    vec3 x = p - s + dot(s, vec3(G3));
+    
+    /* calculate i1 and i2 */
+    vec3 e = step(vec3(0.0), x - x.yzx);
+    vec3 i1 = e * (1.0 - e.zxy);
+    vec3 i2 = 1.0 - e.zxy * (1.0 - e);
+    
+    /* x1, x2, x3 */
+    vec3 x1 = x - i1 + G3;
+    vec3 x2 = x - i2 + 2.0 * G3;
+    vec3 x3 = x - 1.0 + 3.0 * G3;
+    
+    /* 2. find four surflets and store them in d */
+    vec4 w, d;
+    
+    /* calculate surflet weights */
+    w.x = dot(x, x);
+    w.y = dot(x1, x1);
+    w.z = dot(x2, x2);
+    w.w = dot(x3, x3);
+    
+    /* w fades from 0.6 at the center of the surflet to 0.0 at the margin */
+    w = max(0.6 - w, 0.0);
+    
+    /* calculate surflet components */
+    d.x = dot(random3(s), x);
+    d.y = dot(random3(s + i1), x1);
+    d.z = dot(random3(s + i2), x2);
+    d.w = dot(random3(s + 1.0), x3);
+    
+    /* multiply d by w^4 */
+    w *= w;
+    w *= w;
+    d *= w;
+    
+    /* 3. return the sum of the four surflets */
+    return dot(d, vec4(52.0));
+}
+
+float simplexNoise3d(vec2 uv, float freq, float z)
+{
+    // NOISE
+    float f = simplex3d(vec3(uv * freq, z));
+    f = 0.5 * f + 0.5;
+
+    return f;
+}
+
+/* const matrices for 3d rotation */
+const mat3 rot1 = mat3(-0.37, 0.36, 0.85, -0.14, -0.93, 0.34, 0.92, 0.01, 0.4);
+const mat3 rot2 = mat3(-0.55, -0.39, 0.74, 0.33, -0.91, -0.24, 0.77, 0.12, 0.63);
+const mat3 rot3 = mat3(-0.71, 0.52, -0.47, -0.08, -0.72, -0.68, -0.7, -0.45, 0.56);
+
+/* directional artifacts can be reduced by rotating each octave */
+float simplex3d_fractal(vec3 m)
+{
+    return 0.5333333 * simplex3d(m * rot1)
+    + 0.2666667 * simplex3d(2.0 * m * rot2)
+    + 0.1333333 * simplex3d(4.0 * m * rot3)
+    + 0.0666667 * simplex3d(8.0 * m);
+}
+    void main() {}
+</script><script id='d:/Prototyping/shadertoy_glsl/lib/SDF_2D.glsl' type='x-shader/x-fragment'>#version 300 es
+    precision highp float;
+    uniform vec3        iResolution;
+uniform float       iTime;
+uniform float       iTimeDelta;
+uniform int         iFrame;
+uniform vec4        iDate;
+uniform vec3        iChannelResolution[10];
+uniform vec4        iMouse;
+uniform vec4        iMouseButton;
+uniform sampler2D   iChannel0;
+uniform sampler2D   iChannel1;
+uniform sampler2D   iChannel2;
+uniform sampler2D   iChannel3;
+uniform sampler2D   iChannel4;
+uniform sampler2D   iChannel5;
+uniform sampler2D   iChannel6;
+uniform sampler2D   iChannel7;
+uniform sampler2D   iChannel8;
+uniform sampler2D   iChannel9;
+uniform sampler2D   iKeyboard;
+uniform float       iSampleRate;
+
+#define iGlobalTime iTime
+#define iGlobalFrame iFrame
+
+#define SHADER_TOY
+
+    float vec2Length(vec2 value)
+{
+    return sqrt(dot(value, value));
+}
+
+float SDF_2D_Circle(float radius, float fade, vec2 pos, vec2 coord)
+{
+    vec2 vecToCentre = coord - pos;
+    float dist = vec2Length(vecToCentre);
+    float min = radius - fade;
+    float max = radius + fade;
+    float circle = smoothstep(min, max, dist);
+
+    return circle;
+}
+
+float SDF_2D_Line(vec2 p, vec2 a, vec2 b)
+{
+    vec2 da = p - a;
+    vec2 db = p - b;
+
+    return 0.0;
+}
+    void main() {}
+</script><script id='d:/Prototyping/shadertoy_glsl/lib/functions.glsl' type='x-shader/x-fragment'>#version 300 es
+    precision highp float;
+    uniform vec3        iResolution;
+uniform float       iTime;
+uniform float       iTimeDelta;
+uniform int         iFrame;
+uniform vec4        iDate;
+uniform vec3        iChannelResolution[10];
+uniform vec4        iMouse;
+uniform vec4        iMouseButton;
+uniform sampler2D   iChannel0;
+uniform sampler2D   iChannel1;
+uniform sampler2D   iChannel2;
+uniform sampler2D   iChannel3;
+uniform sampler2D   iChannel4;
+uniform sampler2D   iChannel5;
+uniform sampler2D   iChannel6;
+uniform sampler2D   iChannel7;
+uniform sampler2D   iChannel8;
+uniform sampler2D   iChannel9;
+uniform sampler2D   iKeyboard;
+uniform float       iSampleRate;
+
+#define iGlobalTime iTime
+#define iGlobalFrame iFrame
+
+#define SHADER_TOY
+
+    vec3 cubeGrid[27] = vec3[27]
+(
+    vec3(-1, -1, -1),
+    vec3(0, -1, -1),
+    vec3(1, -1, -1),
+    vec3(-1, 0, -1),
+    vec3(0, 0, -1),
+    vec3(1, 0, -1),
+    vec3(-1, 1, -1),
+    vec3(0, 1, -1),
+    vec3(1, 1, -1),
+    vec3(-1, -1, 0),
+    vec3(0, -1, 0),
+    vec3(1, -1, 0),
+    vec3(-1, 0, 0),
+    vec3(0, 0, 0),
+    vec3(1, 0, 0),
+    vec3(-1, 1, 0),
+    vec3(0, 1, 0),
+    vec3(1, 1, 0),
+    vec3(-1, -1, 1),
+    vec3(0, -1, 1),
+    vec3(1, -1, 1),
+    vec3(-1, 0, 1),
+    vec3(0, 0, 1),
+    vec3(1, 0, 1),
+    vec3(-1, 1, 1),
+    vec3(0, 1, 1),
+    vec3(1, 1, 1)
+);
+
+struct Disc
+{
+    vec3 p;
+    float s;
+};
+
+struct Ray
+{
+    vec3 o;
+    vec3 d;
+    vec3 invD;
+    int sign[3];
+};
+
+struct Sphere
+{
+    bool hit;
+    vec3 pos;
+    vec3 albedo;
+    float radius;
+    float specularity;
+};
+
+struct Box
+{
+    bool hit;
+    vec3 pos;
+    vec3 albedo;
+    vec3 scale;
+    vec3 rotation;
+    vec3 hitPos;
+    vec3 normal;
+    float specularity;
+};
+
+struct Light
+{
+    vec3 pos;
+    vec3 col;
+    float attenuation;
+    float intensity;
+};
+
+void InitializeScreenSpace(vec2 fragCoord, inout vec2 uv)
+{
+    uv = (fragCoord - .5 * iResolution.xy) / iResolution.y;
+}
+
+float DistLine(vec3 ro, vec3 rd, vec3 p)
+{
+    vec3 rop = (p - ro);
+    return length(cross(rop, rd)) / length(rd);
+}
+
+float DrawDisc(Disc d, Ray r)
+{
+    float radius = 1. - DistLine(r.o, r.d, d.p) / d.s;
+    return smoothstep(0.0, .05, radius);
+}
+
+vec3 LightTrace(vec3 normal, vec3 intersection, Light light)
+{
+    Ray r;
+    r.o = intersection;
+    r.d = normalize(light.pos - r.o); //
+
+    float nDotL = dot(normal, r.d);
+    vec3 lambert = nDotL * light.col;
+
+    return vec3(lambert);
+}
+
+bool SphereInterection(Ray r, Sphere s, inout vec3 hit, inout vec3 normal)
+{
+    float t = dot(s.pos - r.o, r.d);
+    if (t < 0.)  return false; // make sure we are not using casts in the opposite direction
+
+    vec3 p = r.o + r.d * t;
+
+    float y = length(s.pos - p);
+    if (y < s.radius)
+    {
+        float x = sqrt(s.radius * s.radius - y * y);
+        float t1 = t - x;
+        float t2 = t + x;
+
+        hit = r.o + r.d * t1;
+        normal = normalize(hit - s.pos);
+
+        return true;
+    }
+}
+
+
+void InitializeSphere(inout Sphere sphere)
+{
+
+}
+    void main() {}
+</script><script id='d:/Prototyping/shadertoy_glsl/lib/animation.glsl' type='x-shader/x-fragment'>#version 300 es
+    precision highp float;
+    uniform vec3        iResolution;
+uniform float       iTime;
+uniform float       iTimeDelta;
+uniform int         iFrame;
+uniform vec4        iDate;
+uniform vec3        iChannelResolution[10];
+uniform vec4        iMouse;
+uniform vec4        iMouseButton;
+uniform sampler2D   iChannel0;
+uniform sampler2D   iChannel1;
+uniform sampler2D   iChannel2;
+uniform sampler2D   iChannel3;
+uniform sampler2D   iChannel4;
+uniform sampler2D   iChannel5;
+uniform sampler2D   iChannel6;
+uniform sampler2D   iChannel7;
+uniform sampler2D   iChannel8;
+uniform sampler2D   iChannel9;
+uniform sampler2D   iKeyboard;
+uniform float       iSampleRate;
+
+#define iGlobalTime iTime
+#define iGlobalFrame iFrame
+
+#define SHADER_TOY
+
+    
+float mod01(float value)
+{
+    return mod(value, 1.0);
+}
+
+float loopTime(float speed)
+{
+    return mod01(iTime * speed);
+}
+
+float loopTime(float speed, float duration)
+{
+    return mod(iTime * speed, duration);
+}
+
+float sinTime(float speed)
+{
+    return sin(iTime * speed);
+}
+
+float cosTime(float speed)
+{
+    return cos(iTime * speed);
+}
+
+float easeOutCubic(float value)
+{
+    return 1.0 - pow(1.0 - value, 3.0);
+}
+    void main() {}
+</script>
+<script id='d:/Prototyping/shadertoy_glsl/Erosion_SDF.vs' type='x-shader/x-fragment'>
+uniform vec3        iResolution;
+uniform float       iTime;
+uniform float       iTimeDelta;
+uniform int         iFrame;
+uniform vec4        iDate;
+uniform vec3        iChannelResolution[10];
+uniform vec4        iMouse;
+uniform vec4        iMouseButton;
+uniform sampler2D   iChannel0;
+uniform sampler2D   iChannel1;
+uniform sampler2D   iChannel2;
+uniform sampler2D   iChannel3;
+uniform sampler2D   iChannel4;
+uniform sampler2D   iChannel5;
+uniform sampler2D   iChannel6;
+uniform sampler2D   iChannel7;
+uniform sampler2D   iChannel8;
+uniform sampler2D   iChannel9;
+uniform sampler2D   iKeyboard;
+uniform float       iSampleRate;
+
+#define iGlobalTime iTime
+#define iGlobalFrame iFrame
+
+#define SHADER_TOY
+
+
+
+vec2 hash(vec2 p) // replace this by something better
+
+{
+    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+    return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+}
+
+float noise(in vec2 p)
+{
+    const float K1 = 0.366025404; // (sqrt(3)-1)/2;
+    const float K2 = 0.211324865; // (3-sqrt(3))/6;
+
+    vec2  i = floor(p + (p.x + p.y) * K1);
+    vec2  a = p - i + (i.x + i.y) * K2;
+    float m = step(a.y, a.x);
+    vec2  o = vec2(m, 1.0 - m);
+    vec2  b = a - o + K2;
+    vec2  c = a - 1.0 + 2.0 * K2;
+    vec3  h = max(0.5 - vec3(dot(a, a), dot(b, b), dot(c, c)), 0.0);
+    vec3  n = h * h * h * h * vec3(dot(a, hash(i + 0.0)), dot(b, hash(i + o)), dot(c, hash(i + 1.0)));
+    return dot(n, vec3(70.0));
+}
+
+/* discontinuous pseudorandom uniformly distributed in [-0.5, +0.5]^3 */
+vec3 random3(vec3 c)
+{
+    float j = 4096.0 * sin(dot(c, vec3(17.0, 59.4, 15.0)));
+    vec3 r;
+    r.z = fract(512.0 * j);
+    j *= .125;
+    r.x = fract(512.0 * j);
+    j *= .125;
+    r.y = fract(512.0 * j);
+    return r - 0.5;
+}
+
+/* skew constants for 3d simplex functions */
+const float F3 = 0.3333333;
+const float G3 = 0.1666667;
+
+/* 3d simplex noise */
+float simplex3d(vec3 p)
+{
+    /* 1. find current tetrahedron T and it's four vertices */
+    /* s, s+i1, s+i2, s+1.0 - absolute skewed (integer) coordinates of T vertices */
+    /* x, x1, x2, x3 - unskewed coordinates of p relative to each of T vertices*/
+    
+    /* calculate s and x */
+    vec3 s = floor(p + dot(p, vec3(F3)));
+    vec3 x = p - s + dot(s, vec3(G3));
+    
+    /* calculate i1 and i2 */
+    vec3 e = step(vec3(0.0), x - x.yzx);
+    vec3 i1 = e * (1.0 - e.zxy);
+    vec3 i2 = 1.0 - e.zxy * (1.0 - e);
+    
+    /* x1, x2, x3 */
+    vec3 x1 = x - i1 + G3;
+    vec3 x2 = x - i2 + 2.0 * G3;
+    vec3 x3 = x - 1.0 + 3.0 * G3;
+    
+    /* 2. find four surflets and store them in d */
+    vec4 w, d;
+    
+    /* calculate surflet weights */
+    w.x = dot(x, x);
+    w.y = dot(x1, x1);
+    w.z = dot(x2, x2);
+    w.w = dot(x3, x3);
+    
+    /* w fades from 0.6 at the center of the surflet to 0.0 at the margin */
+    w = max(0.6 - w, 0.0);
+    
+    /* calculate surflet components */
+    d.x = dot(random3(s), x);
+    d.y = dot(random3(s + i1), x1);
+    d.z = dot(random3(s + i2), x2);
+    d.w = dot(random3(s + 1.0), x3);
+    
+    /* multiply d by w^4 */
+    w *= w;
+    w *= w;
+    d *= w;
+    
+    /* 3. return the sum of the four surflets */
+    return dot(d, vec4(52.0));
+}
+
+float simplexNoise3d(vec2 uv, float freq, float z)
+{
+    // NOISE
+    float f = simplex3d(vec3(uv * freq, z));
+    f = 0.5 * f + 0.5;
+
+    return f;
+}
+
+/* const matrices for 3d rotation */
+const mat3 rot1 = mat3(-0.37, 0.36, 0.85, -0.14, -0.93, 0.34, 0.92, 0.01, 0.4);
+const mat3 rot2 = mat3(-0.55, -0.39, 0.74, 0.33, -0.91, -0.24, 0.77, 0.12, 0.63);
+const mat3 rot3 = mat3(-0.71, 0.52, -0.47, -0.08, -0.72, -0.68, -0.7, -0.45, 0.56);
+
+/* directional artifacts can be reduced by rotating each octave */
+float simplex3d_fractal(vec3 m)
+{
+    return 0.5333333 * simplex3d(m * rot1)
+    + 0.2666667 * simplex3d(2.0 * m * rot2)
+    + 0.1333333 * simplex3d(4.0 * m * rot3)
+    + 0.0666667 * simplex3d(8.0 * m);
+}
+float vec2Length(vec2 value)
+{
+    return sqrt(dot(value, value));
+}
+
+float SDF_2D_Circle(float radius, float fade, vec2 pos, vec2 coord)
+{
+    vec2 vecToCentre = coord - pos;
+    float dist = vec2Length(vecToCentre);
+    float min = radius - fade;
+    float max = radius + fade;
+    float circle = smoothstep(min, max, dist);
+
+    return circle;
+}
+
+float SDF_2D_Line(vec2 p, vec2 a, vec2 b)
+{
+    vec2 da = p - a;
+    vec2 db = p - b;
+
+    return 0.0;
+}
+vec3 cubeGrid[27] = vec3[27]
+(
+    vec3(-1, -1, -1),
+    vec3(0, -1, -1),
+    vec3(1, -1, -1),
+    vec3(-1, 0, -1),
+    vec3(0, 0, -1),
+    vec3(1, 0, -1),
+    vec3(-1, 1, -1),
+    vec3(0, 1, -1),
+    vec3(1, 1, -1),
+    vec3(-1, -1, 0),
+    vec3(0, -1, 0),
+    vec3(1, -1, 0),
+    vec3(-1, 0, 0),
+    vec3(0, 0, 0),
+    vec3(1, 0, 0),
+    vec3(-1, 1, 0),
+    vec3(0, 1, 0),
+    vec3(1, 1, 0),
+    vec3(-1, -1, 1),
+    vec3(0, -1, 1),
+    vec3(1, -1, 1),
+    vec3(-1, 0, 1),
+    vec3(0, 0, 1),
+    vec3(1, 0, 1),
+    vec3(-1, 1, 1),
+    vec3(0, 1, 1),
+    vec3(1, 1, 1)
+);
+
+struct Disc
+{
+    vec3 p;
+    float s;
+};
+
+struct Ray
+{
+    vec3 o;
+    vec3 d;
+    vec3 invD;
+    int sign[3];
+};
+
+struct Sphere
+{
+    bool hit;
+    vec3 pos;
+    vec3 albedo;
+    float radius;
+    float specularity;
+};
+
+struct Box
+{
+    bool hit;
+    vec3 pos;
+    vec3 albedo;
+    vec3 scale;
+    vec3 rotation;
+    vec3 hitPos;
+    vec3 normal;
+    float specularity;
+};
+
+struct Light
+{
+    vec3 pos;
+    vec3 col;
+    float attenuation;
+    float intensity;
+};
+
+void InitializeScreenSpace(vec2 fragCoord, inout vec2 uv)
+{
+    uv = (fragCoord - .5 * iResolution.xy) / iResolution.y;
+}
+
+float DistLine(vec3 ro, vec3 rd, vec3 p)
+{
+    vec3 rop = (p - ro);
+    return length(cross(rop, rd)) / length(rd);
+}
+
+float DrawDisc(Disc d, Ray r)
+{
+    float radius = 1. - DistLine(r.o, r.d, d.p) / d.s;
+    return smoothstep(0.0, .05, radius);
+}
+
+vec3 LightTrace(vec3 normal, vec3 intersection, Light light)
+{
+    Ray r;
+    r.o = intersection;
+    r.d = normalize(light.pos - r.o); //
+
+    float nDotL = dot(normal, r.d);
+    vec3 lambert = nDotL * light.col;
+
+    return vec3(lambert);
+}
+
+bool SphereInterection(Ray r, Sphere s, inout vec3 hit, inout vec3 normal)
+{
+    float t = dot(s.pos - r.o, r.d);
+    if (t < 0.)  return false; // make sure we are not using casts in the opposite direction
+
+    vec3 p = r.o + r.d * t;
+
+    float y = length(s.pos - p);
+    if (y < s.radius)
+    {
+        float x = sqrt(s.radius * s.radius - y * y);
+        float t1 = t - x;
+        float t2 = t + x;
+
+        hit = r.o + r.d * t1;
+        normal = normalize(hit - s.pos);
+
+        return true;
+    }
+}
+
+
+void InitializeSphere(inout Sphere sphere)
+{
+
+}
+
+float mod01(float value)
+{
+    return mod(value, 1.0);
+}
+
+float loopTime(float speed)
+{
+    return mod01(iTime * speed);
+}
+
+float loopTime(float speed, float duration)
+{
+    return mod(iTime * speed, duration);
+}
+
+float sinTime(float speed)
+{
+    return sin(iTime * speed);
+}
+
+float cosTime(float speed)
+{
+    return cos(iTime * speed);
+}
+
+float easeOutCubic(float value)
+{
+    return 1.0 - pow(1.0 - value, 3.0);
+}
+
+float timeSpeed = .75;
+float timeDuration = 2.0;
+float circleRadius = 0.25;
+float circleFade = .15;
+float noiseFreq = 8.;
+vec2 circlePos = vec2(0.0);
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord)
+{
+    // Pixel color
+    vec3 col = vec3(1.);
+
+    vec2 uv;
+    InitializeScreenSpace(fragCoord, uv);
+    
+    // time
+    float loopedTime = loopTime(timeSpeed, timeDuration);
+    
+    // noise
+    float noise = simplexNoise3d(uv, noiseFreq, loopedTime);
+
+
+    //circle
+    float circle_xPos = circlePos.x + sinTime(timeSpeed) * 0.25;
+    vec2 animatedCirclePos = vec2(circle_xPos, circlePos.y);
+    float circle = SDF_2D_Circle(circleRadius, circleFade, animatedCirclePos, uv);
+
+    circle *= 2.;
+
+    noise -= circle;
+    noise = saturate(noise);
+
+    // final color
+    col = vec3(noise);
+
+    fragColor = vec4(col, 1.0);
+}
+void main() {
+    vec2 fragCoord = gl_FragCoord.xy;
+    mainImage(gl_FragColor, fragCoord);
+}
+</script>
+
+<script type="text/javascript">
+    let vscode = undefined;
+    if (typeof acquireVsCodeApi === 'function') {
+        vscode = acquireVsCodeApi();
+    }
+    var compileTimePanel;
+
+    let revealError = function(line, file) {
+        if (vscode) {
+            vscode.postMessage({
+                command: 'showGlslsError',
+                line: line,
+                file: file
+            });
+        }
+    };
+
+    let currentShader = {};
+    // Error Callback
+    console.error = function () {
+        if('7' in arguments) {
+            let errorRegex = /ERROR: \d+:(\d+):\W(.*)\n/g;
+            let rawErrors = arguments[7];
+            let match;
+            
+            let diagnostics = [];
+            let message = '';
+            while(match = errorRegex.exec(rawErrors)) {
+                let lineNumber = Number(match[1]) - currentShader.LineOffset;
+                let error = match[2];
+                diagnostics.push({
+                    line: lineNumber,
+                    message: error
+                });
+                let lineHighlight = `<a class='error' unselectable onclick='revealError(${lineNumber}, "${currentShader.File}")'>Line ${lineNumber}</a>`;
+                message += `<li>${lineHighlight}: ${error}</li>`;
+            }
+            console.log(message);
+            let diagnosticBatch = {
+                filename: currentShader.File,
+                diagnostics: diagnostics
+            };
+            if (vscode !== undefined) {
+                vscode.postMessage({
+                    command: 'showGlslDiagnostic',
+                    type: 'error',
+                    diagnosticBatch: diagnosticBatch
+                });
+            }
+    
+            $('#message').append(`<h3>Shader failed to compile - ${currentShader.Name} </h3>`);
+            $('#message').append('<ul>');
+            $('#message').append(message);
+            $('#message').append('</ul>');
+        }
+    };
+
+    // Development feature: Output warnings from third-party libraries
+    // console.warn = function (message) {
+    //     $("#message").append(message + '<br>');
+    // };
+
+    let clock = new THREE.Clock();
+    let pausedTime = 0.0;
+    let deltaTime = 0.0;
+    let startingTime = 0;
+    let time = startingTime;
+
+    let date = new THREE.Vector4();
+
+    let updateDate = function() {
+        let today = new Date();
+        date.x = today.getFullYear();
+        date.y = today.getMonth();
+        date.z = today.getDate();
+        date.w = today.getHours() * 60 * 60 
+            + today.getMinutes() * 60
+            + today.getSeconds()
+            + today.getMilliseconds() * 0.001;
+    };
+    updateDate();
+
+    let paused = false;
+    let pauseButton = document.getElementById('pause-button');
+    if (pauseButton) {
+        pauseButton.onclick = function(){
+            paused = pauseButton.checked;
+            if (!paused) {
+                // Audio Resume
+                pausedTime += clock.getDelta();
+            }
+            else {
+                // Audio Pause
+            }
+        };
+    }
+    
+    {
+        let screenshotButton = document.getElementById("screenshot");
+        if (screenshotButton) {
+            screenshotButton.addEventListener('click', saveScreenshot);
+        }
+    }
+    
+    {
+        let reloadButton = document.getElementById("reload");
+        if (reloadButton) {
+            reloadButton.addEventListener('click', reloadWebview);
+        }
+    }
+    
+    window.addEventListener('message', event => {
+        const message = event.data; // The JSON data our extension sent
+        switch (message.command) {
+            case 'pause':
+                if (pauseButton) {
+                    pauseButton.checked = !pauseButton.checked;
+                }
+                paused = !paused;
+                if (!paused) {
+                    // Audio Resume
+                    pausedTime += clock.getDelta();
+                }
+                else {
+                    // Audio Pause
+                }
+                break;
+            case 'screenshot':
+                saveScreenshot();
+                break;
+        }
+    });
+
+    let canvas = document.getElementById('canvas');
+    let gl = canvas.getContext('webgl2');
+    let isWebGL2 = gl != null;
+    if (gl == null) gl = canvas.getContext('webgl');
+    let supportsFloatFramebuffer = (gl.getExtension('EXT_color_buffer_float') != null) || (gl.getExtension('WEBGL_color_buffer_float') != null);
+    let supportsHalfFloatFramebuffer = (gl.getExtension('EXT_color_buffer_half_float') != null);
+    let framebufferType = THREE.UnsignedByteType;
+    if (supportsFloatFramebuffer) framebufferType = THREE.FloatType;
+    else if (supportsHalfFloatFramebuffer) framebufferType = THREE.HalfFloatType;
+
+    let renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, context: gl, preserveDrawingBuffer: true });
+    let resolution = new THREE.Vector3();
+    let mouse = new THREE.Vector4(807, 874, -807, -874);
+    let mouseButton = new THREE.Vector4(0, 0, 0, 0);
+    let normalizedMouse = new THREE.Vector2(0.37464788732394366, 0.8962655601659751);
+    let frameCounter = 0;
+
+    // Audio Init
+    const audioContext = {
+        sampleRate: 0
+    };
+    // Audio Resume
+
+    let buffers = [];
+    // Buffers
+    buffers.push({
+        Name: 'd:/Prototyping/shadertoy_glsl/Erosion_SDF.vs',
+        File: 'd:/Prototyping/shadertoy_glsl/Erosion_SDF.vs',
+        LineOffset: 422,
+        Target: null,
+        ChannelResolution: Array(10).fill(new THREE.Vector3(0,0,0)),
+        PingPongTarget: null,
+        PingPongChannel: 0,
+        Dependents: [],
+        Shader: new THREE.ShaderMaterial({
+            fragmentShader: document.getElementById('d:/Prototyping/shadertoy_glsl/Erosion_SDF.vs').textContent,
+            depthWrite: false,
+            depthTest: false,
+            uniforms: {
+                iResolution: { type: 'v3', value: resolution },
+                iTime: { type: 'f', value: 0.0 },
+                iTimeDelta: { type: 'f', value: 0.0 },
+                iFrame: { type: 'i', value: 0 },
+                iMouse: { type: 'v4', value: mouse },
+                iMouseButton: { type: 'v2', value: mouseButton },
+    
+                iChannelResolution: { type: 'v3v', value: Array(10).fill(new THREE.Vector3(0,0,0)) },
+    
+                iDate: { type: 'v4', value: date },
+                iSampleRate: { type: 'f', value: audioContext.sampleRate },
+    
+                iChannel0: { type: 't' },
+                iChannel1: { type: 't' },
+                iChannel2: { type: 't' },
+                iChannel3: { type: 't' },
+                iChannel4: { type: 't' },
+                iChannel5: { type: 't' },
+                iChannel6: { type: 't' },
+                iChannel7: { type: 't' },
+                iChannel8: { type: 't' },
+                iChannel9: { type: 't' },
+    
+                resolution: { type: 'v2', value: resolution },
+                time: { type: 'f', value: 0.0 },
+                mouse: { type: 'v2', value: normalizedMouse },
+            }
+        })
+    });
+    let commonIncludes = [];
+    // Includes
+    commonIncludes.push({
+        Name: 'd:/Prototyping/shadertoy_glsl/lib/simplexNoise3D.glsl',
+        File: 'd:/Prototyping/shadertoy_glsl/lib/simplexNoise3D.glsl'
+    });commonIncludes.push({
+        Name: 'd:/Prototyping/shadertoy_glsl/lib/SDF_2D.glsl',
+        File: 'd:/Prototyping/shadertoy_glsl/lib/SDF_2D.glsl'
+    });commonIncludes.push({
+        Name: 'd:/Prototyping/shadertoy_glsl/lib/functions.glsl',
+        File: 'd:/Prototyping/shadertoy_glsl/lib/functions.glsl'
+    });commonIncludes.push({
+        Name: 'd:/Prototyping/shadertoy_glsl/lib/animation.glsl',
+        File: 'd:/Prototyping/shadertoy_glsl/lib/animation.glsl'
+    });
+
+    // WebGL2 inserts more lines into the shader
+    if (isWebGL2) {
+        for (let buffer of buffers) {
+            buffer.LineOffset += 16;
+        }
+    }
+
+    // Keyboard Init
+    
+    // Uniforms Init
+    // Uniforms Update
+
+    let texLoader = new THREE.TextureLoader();
+    // Texture Init
+    
+
+    let scene = new THREE.Scene();
+    let quad = new THREE.Mesh(
+        new THREE.PlaneGeometry(resolution.x, resolution.y),
+        null
+    );
+    scene.add(quad);
+    
+    let camera = new THREE.OrthographicCamera(-resolution.x / 2.0, resolution.x / 2.0, resolution.y / 2.0, -resolution.y / 2.0, 1, 1000);
+    camera.position.set(0, 0, 10);
+
+    // Run every shader once to check for compile errors
+    let compileTimeStart = performance.now();
+    let failed=0;
+    for (let include of commonIncludes) {
+        currentShader = {
+            Name: include.Name,
+            File: include.File,
+            // add two for version and precision lines
+            LineOffset: 26 + 2
+        };
+        // bail if there is an error found in the include script
+        if(compileFragShader(gl, document.getElementById(include.Name).textContent) == false) {
+            throw Error(`Failed to compile ${include.Name}`);
+        }
+    }
+
+    for (let buffer of buffers) {
+        currentShader = {
+            Name: buffer.Name,
+            File: buffer.File,
+            LineOffset: buffer.LineOffset
+        };
+        quad.material = buffer.Shader;
+        renderer.setRenderTarget(buffer.Target);
+        renderer.render(scene, camera);
+    }
+    currentShader = {};
+    let compileTimeEnd = performance.now();
+    let compileTime = compileTimeEnd - compileTimeStart;
+    if (compileTimePanel !== undefined) {
+        for (let i = 0; i < 200; i++) {
+            compileTimePanel.update(compileTime, 200);
+        }
+    }
+
+    computeSize();
+    render();
+
+    function addLineNumbers( string ) {
+        let lines = string.split( '\\n' );
+        for ( let i = 0; i < lines.length; i ++ ) {
+            lines[ i ] = ( i + 1 ) + ': ' + lines[ i ];
+        }
+        return lines.join( '\\n' );
+    }
+
+    function compileFragShader(gl, fsSource) {
+        const fs = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fs, fsSource);
+        gl.compileShader(fs);
+        if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+            const fragmentLog = gl.getShaderInfoLog(fs);
+            console.error( 'THREE.WebGLProgram: shader error: ', gl.getError(), 'gl.COMPILE_STATUS', null, null, null, null, fragmentLog );
+            return false;
+        }
+        return true;
+    }
+
+    function render() {
+        requestAnimationFrame(render);
+        // Pause Whole Render
+        if (paused) return;
+
+        // Advance Time
+        deltaTime = clock.getDelta();
+        time = startingTime + clock.getElapsedTime() - pausedTime;
+        updateDate();
+
+        // Audio Update
+
+        for (let buffer of buffers) {
+            buffer.Shader.uniforms['iResolution'].value = resolution;
+            buffer.Shader.uniforms['iTimeDelta'].value = deltaTime;
+            buffer.Shader.uniforms['iTime'].value = time;
+            buffer.Shader.uniforms['iFrame'].value = frameCounter;
+            buffer.Shader.uniforms['iMouse'].value = mouse;
+            buffer.Shader.uniforms['iMouseButton'].value = mouseButton;
+
+            buffer.Shader.uniforms['resolution'].value = resolution;
+            buffer.Shader.uniforms['time'].value = time;
+            buffer.Shader.uniforms['mouse'].value = normalizedMouse;
+
+            quad.material = buffer.Shader;
+            renderer.setRenderTarget(buffer.Target);
+            renderer.render(scene, camera);
+        }
+        
+        // Uniforms Update
+
+        // Keyboard Update
+
+        for (let buffer of buffers) {
+            if (buffer.PingPongTarget) {
+                [buffer.PingPongTarget, buffer.Target] = [buffer.Target, buffer.PingPongTarget];
+                buffer.Shader.uniforms[`iChannel${buffer.PingPongChannel}`].value = buffer.PingPongTarget.texture;
+                for (let dependent of buffer.Dependents) {
+                    const dependentBuffer = buffers[dependent.Index];
+                    dependentBuffer.Shader.uniforms[`iChannel${dependent.Channel}`].value = buffer.Target.texture;
+                }
+            }
+        }
+
+        frameCounter++;
+    }
+    function computeSize() {
+        let forceAspectRatio = (width, height) => {
+            // Forced aspect ratio
+            let forcedAspects = [0,0];
+            let forcedAspectRatio = forcedAspects[0] / forcedAspects[1];
+            let aspectRatio = width / height;
+
+            if (forcedAspectRatio <= 0 || !isFinite(forcedAspectRatio)) {
+                let resolution = new THREE.Vector3(width, height, 1.0);
+                return resolution;
+            }
+            else if (aspectRatio < forcedAspectRatio) {
+                let resolution = new THREE.Vector3(width, Math.floor(width / forcedAspectRatio), 1);
+                return resolution;
+            }
+            else {
+                let resolution = new THREE.Vector3(Math.floor(height * forcedAspectRatio), height, 1);
+                return resolution;
+            }
+        };
+        
+        // Compute forced aspect ratio and align canvas
+        resolution = forceAspectRatio(window.innerWidth, window.innerHeight);
+        canvas.style.left = `${(window.innerWidth - resolution.x) / 2}px`;
+        canvas.style.top = `${(window.innerHeight - resolution.y) / 2}px`;
+
+        for (let buffer of buffers) {
+            if (buffer.Target) {
+                buffer.Target.setSize(resolution.x, resolution.y);
+            }
+            if (buffer.PingPongTarget) {
+                buffer.PingPongTarget.setSize(resolution.x, resolution.y);
+            }
+        }
+        renderer.setSize(resolution.x, resolution.y, false);
+        
+        // Update Camera and Mesh
+        quad.geometry = new THREE.PlaneGeometry(resolution.x, resolution.y);
+        camera.left = -resolution.x / 2.0;
+        camera.right = resolution.x / 2.0;
+        camera.top = resolution.y / 2.0;
+        camera.bottom = -resolution.y / 2.0;
+        camera.updateProjectionMatrix();
+
+        // Reset iFrame on resize for shaders that rely on first-frame setups
+        frameCounter = 0;
+    }
+    function saveScreenshot() {
+        let doSaveScreenshot = () => {
+            renderer.domElement.toBlob(function(blob){
+                let a = document.createElement('a');
+                let url = URL.createObjectURL(blob);
+                a.href = url;
+                a.download = 'shadertoy.png';
+                a.click();
+            }, 'image/png', 1.0);
+        };
+
+        let forcedScreenshotResolution = [0,0];
+        if (forcedScreenshotResolution[0] <= 0 || forcedScreenshotResolution[1] <= 0) {
+            renderer.render(scene, camera);
+            doSaveScreenshot();
+        }
+        else {
+            renderer.setSize(forcedScreenshotResolution[0], forcedScreenshotResolution[1], false);
+            
+            for (let buffer of buffers) {
+                buffer.Shader.uniforms['iResolution'].value = new THREE.Vector3(forcedScreenshotResolution[0], forcedScreenshotResolution[1], 1);
+                buffer.Shader.uniforms['resolution'].value = new THREE.Vector3(forcedScreenshotResolution[0], forcedScreenshotResolution[1], 1);
+
+                quad.material = buffer.Shader;
+                renderer.setRenderTarget(buffer.Target);
+                renderer.render(scene, camera);
+            }
+
+            doSaveScreenshot();
+            renderer.setSize(resolution.x, resolution.y, false);
+        }
+    }
+    function reloadWebview() {
+        if (vscode !== undefined) {
+            vscode.postMessage({ command: 'reloadWebview' });
+        }
+    }
+    function updateMouse() {
+        if (vscode !== undefined) {
+            vscode.postMessage({
+                command: 'updateMouse',
+                mouse: {
+                    x: mouse.x,
+                    y: mouse.y,
+                    z: mouse.z,
+                    w: mouse.w
+                },
+                normalizedMouse: {
+                    x: normalizedMouse.x,
+                    y: normalizedMouse.y
+                }
+            });
+        }
+    }
+    let dragging = false;
+    function updateNormalizedMouseCoordinates(clientX, clientY) {
+        let rect = canvas.getBoundingClientRect();
+        let mouseX = clientX - rect.left;
+        let mouseY = resolution.y - clientY - rect.top;
+
+        if (mouseButton.x + mouseButton.y != 0) {
+            mouse.x = mouseX;
+            mouse.y = mouseY;
+        }
+
+        normalizedMouse.x = mouseX / resolution.x;
+        normalizedMouse.y = mouseY / resolution.y;
+    }
+    canvas.addEventListener('mousemove', function(evt) {
+        updateNormalizedMouseCoordinates(evt.clientX, evt.clientY);
+        updateMouse();
+    }, false);
+    canvas.addEventListener('mousedown', function(evt) {
+        if (evt.button == 0)
+            mouseButton.x = 1;
+        if (evt.button == 2)
+            mouseButton.y = 1;
+
+        if (!dragging) {
+            updateNormalizedMouseCoordinates(evt.clientX, evt.clientY);
+            mouse.z = mouse.x;
+            mouse.w = mouse.y;
+            dragging = true
+        }
+
+        updateMouse();
+    }, false);
+    canvas.addEventListener('mouseup', function(evt) {
+        if (evt.button == 0)
+            mouseButton.x = 0;
+        if (evt.button == 2)
+            mouseButton.y = 0;
+
+        dragging = false;
+        mouse.z = -mouse.z;
+        mouse.w = -mouse.w;
+
+        updateMouse();
+    }, false);
+    window.addEventListener('resize', function() {
+        computeSize();
+    });
+
+    // Keyboard Callbacks
+</script>

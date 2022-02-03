@@ -29,7 +29,8 @@ vec3 cubeGrid[27] = vec3[27]
     vec3(1, 1, 1)
 );
 
-struct Disc {
+struct Disc
+{
     vec3 p;
     float s;
 };
@@ -85,7 +86,7 @@ float DistLine(vec3 ro, vec3 rd, vec3 p)
 float DrawDisc(Disc d, Ray r)
 {
     float radius = 1. - DistLine(r.o, r.d, d.p) / d.s;
-    return smoothstep(0.0,.05,radius);
+    return smoothstep(0.0, .05, radius);
 }
 
 vec3 LightTrace(vec3 normal, vec3 intersection, Light light)
