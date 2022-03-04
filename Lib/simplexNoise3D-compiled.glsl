@@ -87,13 +87,23 @@ float simplex3d(vec3 p)
     return dot(d, vec4(52.0));
 }
 
+float simplexNoise3d(vec3 uvz)
+{
+    // NOISE
+    float f = simplex3d(uvz);
+    f = 0.5 * f + 0.5;
+    // f = (f + 1.) * .5;
+    f = smoothstep(0., 1., f);
+
+    return f;
+}
+
 float simplexNoise3d(vec2 uv, float freq, float z)
 {
     // NOISE
-    float f = simplex3d(vec3(uv * freq, z));
-    f = 0.5 * f + 0.5;
+    vec3 uvz = vec3(uv * freq, z);
 
-    return f;
+    return simplexNoise3d(uvz);
 }
 
 /* const matrices for 3d rotation */

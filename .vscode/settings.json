@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.vs": "shaderlab",
+        "*.glsl": "shaderlab"
+    },
+    "omnisharp.useGlobalMono": "always"
+}

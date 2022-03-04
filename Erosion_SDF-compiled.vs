@@ -88,13 +88,23 @@ float simplex3d(vec3 p)
     return dot(d, vec4(52.0));
 }
 
+float simplexNoise3d(vec3 uvz)
+{
+    // NOISE
+    float f = simplex3d(uvz);
+    f = 0.5 * f + 0.5;
+    // f = (f + 1.) * .5;
+    f = smoothstep(0., 1., f);
+
+    return f;
+}
+
 float simplexNoise3d(vec2 uv, float freq, float z)
 {
     // NOISE
-    float f = simplex3d(vec3(uv * freq, z));
-    f = 0.5 * f + 0.5;
+    vec3 uvz = vec3(uv * freq, z);
 
-    return f;
+    return simplexNoise3d(uvz);
 }
 
 /* const matrices for 3d rotation */
@@ -313,22 +323,21 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord)
     InitializeScreenSpace(fragCoord, uv);
     
     // time
-    float loopedTime = loopTime(timeSpeed * .5, M_PI_2);
+    float noiseSpeed = iTime * 1.;
     
     // noise
-    float noise = simplexNoise3d(uv, noiseFreq, loopedTime);
+    float noise = simplexNoise3d(uv, noiseFreq, noiseSpeed);
 
     //circle
     float circle_xPos = circlePos.x + sinTime(timeSpeed) * 0.25;
     vec2 animatedCirclePos = vec2(circle_xPos, circlePos.y);
-    float circle = SDF_2D_Circle(circleRadius, circleFade, animatedCirclePos, uv);
-    circle *= 2.;
+    
+    float circle = SDF_2D_Circle(circleRadius, circleFade * noise, circlePos, uv);
 
     // i only want noise on the edges...
     // lets work this out next!
 
     noise -= circle;
-    noise *= 1.2;
     noise = saturate(noise);
     // final color
     col = saturate(vec3(noise));
