@@ -2,6 +2,7 @@
 #include "./lib/CamerasAndCoordinates.glsl"
 #include "./lib/Lighting.glsl"
 #include "./lib/MathUtils.glsl"
+#include "./lib/voronoiNoise.glsl"
 
 #define SCENE_MAX_STEPS 3000
 // #define MAX_DIST 800.
@@ -29,7 +30,7 @@ float Box3DDist(vec3 p, Box3D b)
     // length is pythag
     // max is clamping the evaluation p
     // abs applies the mirroring
-    p = MouseRotation(p - b.position, 0., 0.);
+    p = MouseRotation(p - b.position, 0.15, .25);
     p = abs(p);
     p -= b.scale;
     
@@ -43,14 +44,19 @@ float GetDist(vec3 p)
     Box3D box;
     box.position = sceneCentre;
     box.scale = vec3(.75);
-    box.roundness = .05;
+    box.roundness = .1;
 
     
     float boxD = Box3DDist(p, box);
     float groundD = p.y + 0.00001;
     
-    float d = min(boxD, groundD);
+    float d = boxD; //min(boxD, groundD);
     return d;
+}
+
+vec3 ReflectionVector(vec3 dir, vec3 normal)
+{
+    return dir - 2. * (dot(dir, normal) * normal);
 }
 
 vec2 Raymarch(Camera cam)
@@ -113,6 +119,12 @@ vec3 GetNormal(vec3 p)
     return normalize(n);
 }
 
+vec3 SkyBox(vec3 samplePos)
+{
+    float noiseF = 10.;
+    return vec3(voronoi(samplePos * noiseF));
+}
+
 void mainImage(out vec4 fragColor, in vec2 fragCoord)
 {
     vec2 m = iMouse.xy / iResolution.xy;
@@ -129,18 +141,26 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord)
     ConstructCamera(uv, cam);
     
     float distance = Raymarch(cam).x;
+
     
     // AA?
     vec3 p = cam.pos + cam.dir * distance;
+
+    col = SkyBox(cam.dir);// this is not spherized
 
     if (distance < MAX_DIST)
     {
         vec3 n = GetNormal(p);
         float diff = DefaultLighting(n);
-        //float density = RaymarchDensity(p, cam, .02);
+        vec3 reflection = ReflectionVector(normalize(cam.dir), n);
+        float density = RaymarchDensity(p, cam, .0125);
 
-        col += diff;
+        col = SkyBox(normalize(reflection));
+        // col = reflection - .8;
+
     }
+
+
 
     // Output to screen
     fragColor = vec4(col, 1.0);

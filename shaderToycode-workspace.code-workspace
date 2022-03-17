@@ -6,7 +6,8 @@
 	],
 	"settings": {
 		"files.associations": {
-			"*.vs": "cpp"
+			"*.vs": "cpp",
+			"*.glsl": "cpp"
 		}
 	}
 }

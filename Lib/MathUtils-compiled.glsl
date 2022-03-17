@@ -44,4 +44,3 @@ vec3 MouseRotation(vec3 p, float x, float y)
 
     return p;
 }
-
