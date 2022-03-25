@@ -23,6 +23,10 @@ void InitializeScreenSpace(vec2 fragCoord, inout vec2 uv)
 /// this is not a tonemapper. it is a colour curve corrector
 vec3 ColorCurves(vec3 value, float t, float s, float p)
 {
+
+    //remap to from 0-1 to 0-5
+    t *= 5.;
+
     value = saturate(value);
 
     // define min max for toe, shoulder and power
@@ -73,7 +77,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord)
     col = mix(col01, col02, noise) + ((voronoiNoise - simplexNoise) + 1.) * .5 * 0.75; //negative numbers but they look fucking sick
 
     // this is so fucking powerful and I love it!
-    col = ColorCurves(col, 3.0, 0.8, 1.8);
+    col = ColorCurves(col, .6, 0.8, 1.8);
 
 
     fragColor = vec4(col, 1.0);

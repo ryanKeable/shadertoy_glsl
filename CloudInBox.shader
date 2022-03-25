@@ -34,7 +34,8 @@ float Box3DDist(vec3 p, Box3D b)
     // length is pythag
     // max is clamping the evaluation p
     // abs applies the mirroring
-    p = MouseRotation(p - b.position, 0.0, 0.0);
+    // p = MouseRotation(p - b.position, 0.0, 0.0);
+    // p = p - b.position;
     p = abs(p);
     p -= b.scale;
     
@@ -43,24 +44,31 @@ float Box3DDist(vec3 p, Box3D b)
 
 float GetDist(vec3 p)
 {
-    vec2 m = iMouse.xy / iResolution.xy;
 
     Box3D box;
     box.position = sceneCentre;
     box.scale = vec3(.75, 0.75, .75);
     box.roundness = 0.05;
 
-    
+    p = MouseRotation(p - box.position, 0.0, 0.0);
     float boxD = Box3DDist(p, box);
-    float groundD = p.y + 0.00001;
     
     float d = boxD; //min(boxD, groundD);
     return d;
 }
 
-vec3 ReflectionVector(vec3 dir, vec3 normal)
+float GetInternalDist(vec3 p)
 {
-    return dir - 2. * (dot(dir, normal) * normal);
+    Box3D internalBox;
+    internalBox.position = sceneCentre;
+    internalBox.scale = vec3(.65, 0.65, .65);
+    internalBox.roundness = 0.025;
+
+    p = MouseRotation(p - internalBox.position, 0.0, 0.0);
+    float internalBoxD = Box3DDist(p, internalBox);
+    
+    float d = internalBoxD; //min(boxD, groundD);
+    return d;
 }
 
 vec2 Raymarch(Ray ray, float side)
@@ -72,6 +80,26 @@ vec2 Raymarch(Ray ray, float side)
     {
         vec3 p = ray.o + distanceFromOrigin * ray.d;
         float distanceFromSurf = GetDist(p)*side; // need a negative distance when inside the object??
+        if (distanceFromSurf < maxDist) maxDist = distanceFromSurf;
+        distanceFromOrigin += distanceFromSurf;
+
+        if (distanceFromOrigin > MAX_DIST || abs(distanceFromSurf) < STEP_PRECISION)
+            break;
+    }
+
+    // returns the distance from the origin and the final distance from the surface
+    return vec2(distanceFromOrigin, maxDist);
+}
+
+vec2 InternalRaymarch(Ray ray, float side)
+{
+    float distanceFromOrigin = 0.0;
+    float maxDist = MAX_DIST;
+
+    for (int i = 0; i < SCENE_MAX_STEPS; i++)
+    {
+        vec3 p = ray.o + distanceFromOrigin * ray.d;
+        float distanceFromSurf = GetInternalDist(p)*side; // need a negative distance when inside the object??
         if (distanceFromSurf < maxDist) maxDist = distanceFromSurf;
         distanceFromOrigin += distanceFromSurf;
 
@@ -126,7 +154,7 @@ vec3 GetNormal(vec3 p)
 vec3 SkyBox(vec3 samplePos)
 {
     float noiseF = 10.;
-    // return texture(iChannel0, samplePos).rgb;
+    return texture(iChannel0, samplePos).rgb;
     return vec3(voronoi(samplePos * noiseF));
 }
 
@@ -156,28 +184,60 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord)
     {
         vec3 n = GetNormal(p);
         float diff = DefaultLighting(n);
+
+        vec3 albedo = diff * vec3(.7, .2, .3);
+
         vec3 reflection = reflect(normalize(ray.d), n);
         
-        float IOR = 1.2;
+        float IOR = 1.15;
         vec3 refraction = refract(normalize(ray.d), n, 1. / IOR);
         
+        // we need to find our internal normals again
         Ray internalRay;
         internalRay.o = p - n * STEP_PRECISION*3.;
-        internalRay.d = refraction;
+        internalRay.d = ray.d;
+
+        float internalDistance = InternalRaymarch(internalRay, 1.).x;
+        vec3 internalP = internalRay.o + internalRay.d * internalDistance;
+
+        if (internalDistance < MAX_DIST)
+        {
+            vec3 internalN = GetNormal(internalP);
+
+        Ray hollowRay;
+        hollowRay.o = internalP - n * STEP_PRECISION*3.;
+        hollowRay.d = ray.d;
+
+            float distanceInside = InternalRaymarch(hollowRay, -1.).x; // inside of object
+
+            vec3 exitP = internalRay.o + internalRay.d * distanceInside;
+            vec3 exitN = -GetNormal(exitP);
+
+            // vec3 exitRefraction = refract(normalize(internalRay.d), exitN, IOR);
+            // if(dot(exitRefraction, exitRefraction)==0.) exitRefraction = reflect(ray.d, exitN);
+            
+            col = exitN;
+
+        }
 
         float distanceInside = Raymarch(internalRay, -1.).x; // inside of object
 
         vec3 exitP = internalRay.o + internalRay.d * distanceInside;
         vec3 exitN = -GetNormal(exitP);
 
-        vec3 exitRefraction = refract(normalize(internalRay.d), exitN, IOR);
-        if(dot(exitRefraction, exitRefraction)==0.) exitRefraction = reflect(ray.d, exitN);
+        // vec3 exitRefraction = refract(normalize(internalRay.d), exitN, IOR);
+        // if(dot(exitRefraction, exitRefraction)==0.) exitRefraction = reflect(ray.d, exitN);
+        
+        // col = exitN;
+
         // float density = RaymarchDensity(p, ray, 0.0125);
 
-        // col = exitRefraction;
+        // do we need to do this if we do not hit the internalbox??
+        // should we just be raymarching internally against a new box rather than a subtracted dist??
 
-        col = SkyBox(normalize(exitRefraction));
-        // col = reflection - .8;
+        // col = SkyBox(normalize(exitRefraction));
+
+        // col = mix(col, albedo, .8);
 
     }
 
