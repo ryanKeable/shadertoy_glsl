@@ -50,7 +50,7 @@ float GetDist(vec3 p)
     box.scale = vec3(.75, 0.75, .75);
     box.roundness = 0.05;
 
-    p = MouseRotation(p - box.position, 0.0, 0.0);
+    p = MouseRotation(p - box.position, 0.2, 0.5);
     float boxD = Box3DDist(p, box);
     
     float d = boxD; //min(boxD, groundD);
@@ -64,7 +64,7 @@ float GetInternalDist(vec3 p)
     internalBox.scale = vec3(.65, 0.65, .65);
     internalBox.roundness = 0.025;
 
-    p = MouseRotation(p - internalBox.position, 0.0, 0.0);
+    p = MouseRotation(p - internalBox.position, 0.2, 0.5);
     float internalBoxD = Box3DDist(p, internalBox);
     
     float d = internalBoxD; //min(boxD, groundD);
@@ -189,7 +189,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord)
 
         vec3 reflection = reflect(normalize(ray.d), n);
         
-        float IOR = 1.15;
+        float IOR = 1.1;
         vec3 refraction = refract(normalize(ray.d), n, 1. / IOR);
         
         // we need to find our internal normals again
@@ -199,32 +199,43 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord)
 
         float internalDistance = InternalRaymarch(internalRay, 1.).x;
         vec3 internalP = internalRay.o + internalRay.d * internalDistance;
+        
+        vec3 exitP;
+        vec3 exitN;
+        float exitDistance;
 
         if (internalDistance < MAX_DIST)
         {
             vec3 internalN = GetNormal(internalP);
+            
 
-        Ray hollowRay;
-        hollowRay.o = internalP - n * STEP_PRECISION*3.;
-        hollowRay.d = ray.d;
+            Ray hollowRay;
+            hollowRay.o = internalP - n * STEP_PRECISION*3.;
+            hollowRay.d = refraction;
 
             float distanceInside = InternalRaymarch(hollowRay, -1.).x; // inside of object
 
-            vec3 exitP = internalRay.o + internalRay.d * distanceInside;
-            vec3 exitN = -GetNormal(exitP);
+            exitP = internalRay.o + internalRay.d * distanceInside;
+            exitN = -GetNormal(exitP);
 
-            // vec3 exitRefraction = refract(normalize(internalRay.d), exitN, IOR);
-            // if(dot(exitRefraction, exitRefraction)==0.) exitRefraction = reflect(ray.d, exitN);
+            reflection += reflect(normalize(hollowRay.d), exitN); // this probably needs to be refreacted out too
+
+            vec3 exitRefraction = refract(normalize(internalRay.d), exitN, 1./IOR);
+            if(dot(exitRefraction, exitRefraction)==0.) exitRefraction = reflect(ray.d, exitN);
             
-            col = exitN;
-
+            internalRay.o = exitP - exitN * STEP_PRECISION*3.;
+            internalRay.d = exitRefraction;
         }
+        
+        exitDistance = Raymarch(internalRay, -1.).x; // inside of object
 
-        float distanceInside = Raymarch(internalRay, -1.).x; // inside of object
+        exitP = internalRay.o + internalRay.d * exitDistance;
+        exitN = -GetNormal(exitP);
 
-        vec3 exitP = internalRay.o + internalRay.d * distanceInside;
-        vec3 exitN = -GetNormal(exitP);
+            vec3 exitRefraction = refract(normalize(internalRay.d), exitN, IOR);
+            if(dot(exitRefraction, exitRefraction)==0.) exitRefraction = reflect(ray.d, exitN);
 
+        col = exitRefraction;
         // vec3 exitRefraction = refract(normalize(internalRay.d), exitN, IOR);
         // if(dot(exitRefraction, exitRefraction)==0.) exitRefraction = reflect(ray.d, exitN);
         
@@ -235,7 +246,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord)
         // do we need to do this if we do not hit the internalbox??
         // should we just be raymarching internally against a new box rather than a subtracted dist??
 
-        // col = SkyBox(normalize(exitRefraction));
+        col = SkyBox(normalize(exitRefraction));
+        col += SkyBox(normalize( reflection));
+        // col /= 2.;
+        col += diff;
 
         // col = mix(col, albedo, .8);
 
